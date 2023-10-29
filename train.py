@@ -139,20 +139,24 @@ def preprocessing():
     data['res_ts'] = data['Response'].str[0]
     data['res_src'] = data['Response'].str[2]
     data['res_dest'] = data['Response'].str[4].str.rstrip(':')
-    data['res_ips'] = data['Response'].str[9:-1]
+    data['res_ips'] = data['Response'].str[9:-1].str.join(', ')
     data['res_size'] = data['Response'].str[-1].str.strip("()")
 
     selected_features = data[['req_ts', 'req_src', 'req_dest', 'req_type', 'req_dom', 'res_ts', 'res_src', 'res_dest', 'res_ips']]
-    selected_features["labels"] = labels
+    # add labels
+    selected_features['labels'] = labels
     return selected_features
 
 def train():
     
     data = preprocessing()
-
-    encoder = OneHotEncoder(sparse=False, drop='first')
-    toencode = data.loc[:, data.columns != 'labels']
+    encoder = OneHotEncoder(sparse_output=True) # sparse_output means that the output will be a sparse matrix
+    # drop column labels
+    toencode = data.drop(columns=['labels'])
     encoded_data = encoder.fit_transform(toencode)
+    print(encoded_data)
+    print(encoded_data.shape)
+    exit(0)
     X = pd.DataFrame(encoded_data, columns=encoder.get_feature_names_out(['req_ts', 'req_src', 'req_dest', 'req_type', 'req_dom', 'res_ts', 'res_src', 'res_dest', 'res_ips']))
     #
     # mapping between original source and vectorized temp_data in order
@@ -160,6 +164,7 @@ def train():
    # print(len(vectorizer.get_feature_names_out()))
     
     label_encoder = LabelEncoder()
+    print(data[['labels']])
     y = label_encoder.fit_transform(data[['labels']])
 
     # Split the temp_data into training and testing sets
