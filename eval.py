@@ -1,9 +1,9 @@
 import argparse
 import pathlib
 import joblib
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.preprocessing import LabelEncoder
 
 
 parser = argparse.ArgumentParser(description="Dataset evaluation")
@@ -22,6 +22,9 @@ def eval():
     with open('eval1_tcpdump.txt', 'r') as test_request_file:
         test = test_request_file.readlines()
     
+    with open('eval1_botlist.txt', 'r') as botlist:
+        bots = list(botlist.readlines())
+    
     dns_requests = []
     dns_responses = []
     for entry in test:
@@ -33,17 +36,29 @@ def eval():
 
     combined_test_data = [req.strip() + '\n' + res.strip() for req, res in zip(dns_requests, dns_responses)]
     
-    vectorizer = TfidfVectorizer()
+    vectorizer = CountVectorizer()
     X_test = vectorizer.fit_transform(combined_test_data)
-    y_test = ['bot'] * len(combined_test_data) 
+    print(X_test.shape[1]) #number of rows
+
+
+    # Get all the rows that contains bot values to compare with the prediction
+    bots_token_rows = []
+    feature_names = vectorizer.get_feature_names_out()
+    for row_index in range(X_test.shape[0]):
+        row = X_test.getrow(row_index)
+        # Iterate through the non-zero elements of the row
+        for col_index, value in zip(row.indices, row.data):
+            #print(f"({row_index}, col : {col_index}) {value}")
+            token_val = feature_names[col_index]
+            if 'unamur' in token_val:
+                if token_val in bots:
+                    bots_token_rows.append(row_index)
+
 
     # Make predictions using the trained classifier
     y_pred = classifier.predict(X_test)
-
-    # Evaluate the classifier's performance
-    accuracy = accuracy_score(y_test, y_pred)
-    report = classification_report(y_test, y_pred, target_names=label_encoder.classes_)
-    confusion = confusion_matrix(y_test, y_pred)
+    print(y_pred)
+    
 
 if __name__ == "__main__":
 
