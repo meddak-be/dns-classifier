@@ -57,21 +57,11 @@ def tcp_to_dns(temp_tcp, entry_list):
         res = format_res.format(timestamp, src_ip, dst_ip, trans_id, n_response, response_type, response_size)
     return req, res
 
-
-def preprocessing():
-    with open('bots_tcpdump.txt', 'r') as bot_file:
-        bot_dns = bot_file.readlines()
-
-    # Read the human DNS request file
-    with open('webclients_tcpdump.txt', 'r') as human_file:
-        human_dns = human_file.readlines()
-        
-    labels = []
-    data = []
-#13:04:06.248756 IP unamur232.46230 > one.one.one.one.domain: Flags [S], seq 2432180501, win 42340, options [mss 1460,sackOK,TS val 3460327790 ecr 0,nop,wscale 9], length 0
-
+def parseAndAdd(data, label):
+    dataList = []
+    labelList = []
     temp = {} #stores request
-    for entry in human_dns:
+    for entry in data:
         if '> one.one.one.one.domain' in entry:
             if "Flags" in entry:
                 continue
@@ -95,39 +85,12 @@ def preprocessing():
                     labels.append('human')
             else:
                 trans_port, trans_id = entry.split()[4].split(".")[1][:-1], re.sub(r'[^0-9]', '', entry.split()[5])
-                data.append({'Request': temp[trans_port+trans_id].split(), 'Response': entry.split()})
-                labels.append('human')
-    
-    print("nice")
-    for entry in bot_dns:
-        if '> one.one.one.one.domain' in entry:
-            if "Flags" in entry:
-                continue
-                # parse the TCP packets of this form : 13:04:06.248756 IP unamur232.46230 > one.one.one.one.domain: Flags [S], seq 2432180501, win 42340, options [mss 1460,sackOK,TS val 3460327790 ecr 0,nop,wscale 9], length 0
-                flags = entry_list[6].split("[")[1].split("]")[0]
-                if 'P' in flags: # push TCP packet
-                    trans_port, trans_id = entry_list[2].split(".")[1], re.sub(r'[^0-9]', '', entry_list[15])
-                    temp_tcp[trans_port+trans_id] = entry
-            else:
-                trans_port, trans_id = entry.split()[2].split(".")[1], re.sub(r'[^0-9]', '', entry.split()[5][:-1])
-                temp[trans_port+trans_id] = entry
-        elif 'one.one.one.one.domain >' in entry:
-            if "Flags" in entry:
-                continue
-                # 11:48:05.573400 IP one.one.one.one.domain > unamur09.60936: Flags [P.], seq 1:631, ack 77, win 64, length 630 12527 37/0/0 A 78.47.199.218, A 78.47.199.206, A 159.69.161.134, A 88.198.200.20, A 78.47.181.156, A 116.202.204.10, A 159.69.161.138, A 88.198.209.13, A 168.119.25.64, A 88.198.204.166, A 88.198.136.226, A 78.47.199.202, A 168.119.25.20, A 88.198.136.228, A 159.69.163.6, A 88.198.200.36, A 88.198.209.34, A 78.47.199.204, A 94.130.197.138, A 88.198.204.164, A 94.130.197.136, A 168.119.25.62, A 168.119.25.78, A 94.130.197.142, A 88.198.200.22, A 88.198.136.234, A 138.201.237.88, A 159.69.167.66, A 88.198.204.168, A 78.47.199.210, A 138.201.236.216, A 88.198.209.36, A 116.202.204.12, A 94.130.197.140, A 88.198.209.15, A 168.119.25.18, A 168.119.25.66 (628)
-                flags = entry_list[6].split("[")[1].split("]")[0]
-                if 'P' in flags: # push TCP packet
-                    req, res = tcp_to_dns(temp_tcp, entry_list)
+                dataList.append({'Request': temp[trans_port+trans_id].split(), 'Response': entry.split()})
+                labelList.append(label)
 
-                    temp_data.append({'Request': req, 'Response': res})
-                    labels.append('human')
-            else:
-                trans_port, trans_id = entry.split()[4].split(".")[1][:-1], re.sub(r'[^0-9]', '', entry.split()[5])
-                data.append({'Request': temp[trans_port+trans_id].split(), 'Response': entry.split()})
-                labels.append('bot')
-        
-    data = pd.DataFrame(data)
+    return dataList, labelList
 
+def extractFeatures(data, labels):
     data['proto'] = 1
     data['req_ts'] = data['Request'].str[0]
     data['req_src'] = data['Request'].str[2]
@@ -145,19 +108,31 @@ def preprocessing():
     selected_features = data[['req_ts', 'req_src', 'req_dest', 'req_type', 'req_dom', 'res_ts', 'res_src', 'res_dest', 'res_ips']]
     # add labels
     selected_features['labels'] = labels
+
     return selected_features
 
-def train():
+def preprocessing(data1, data2):
+
+    d, l = parseAndAdd(data1, "human")
+    d2, l2 = parseAndAdd(data2, "bot")
+
+    data =  d + d2
+    labels = l+l2
+        
+    data = pd.DataFrame(data)
+
+    return extractFeatures(data, labels)
+
+def train(data1, data2):
     
-    data = preprocessing()
+    data = preprocessing(data1, data2)
     encoder = OneHotEncoder(sparse_output=True) # sparse_output means that the output will be a sparse matrix
     # drop column labels
     toencode = data.drop(columns=['labels'])
     encoded_data = encoder.fit_transform(toencode)
-    print(encoded_data)
+    #print(encoded_data)
     print(encoded_data.shape)
-    exit(0)
-    X = pd.DataFrame(encoded_data, columns=encoder.get_feature_names_out(['req_ts', 'req_src', 'req_dest', 'req_type', 'req_dom', 'res_ts', 'res_src', 'res_dest', 'res_ips']))
+
     #
     # mapping between original source and vectorized temp_data in order
     # to find all the token containing "unamur"
@@ -168,7 +143,7 @@ def train():
     y = label_encoder.fit_transform(data[['labels']])
 
     # Split the temp_data into training and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(X, y.ravel(), test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(encoded_data, y.ravel(), test_size=0.2, random_state=42)
 
     print("started training")
     rf_classifier = RandomForestClassifier(n_estimators=100, random_state=42)
@@ -183,30 +158,18 @@ def train():
 
     # Print the evaluation metrics
     print(f'Accuracy: {accuracy}')
-    exit(0)
+
     # Save the trained classifier for later use
     import joblib
-    joblib.dump(classifier, 'dns_classifier_model.pkl')
+    joblib.dump(rf_classifier, 'dns_classifier_model.pkl')
 
 
-    #metrics
-    
-    y_pred = classifier.predict(X_test)
-    print(y_pred)
-    print(X_test)
-    exit(0)
-    accuracy = accuracy_score(y_test, y_pred)
-    report = classification_report(y_test, y_pred, target_names=label_encoder.classes_)
-    confusion = confusion_matrix(y_test, y_pred)
-
-    print(f"Accuracy: {accuracy}")
-    print("Classification Report:")
-    print(report)
-
-
-
-   
 if __name__ == "__main__":
+    with open('bots_tcpdump.txt', 'r') as bot_file:
+        bot_dns = bot_file.readlines()
 
+    # Read the human DNS request file
+    with open('webclients_tcpdump.txt', 'r') as human_file:
+        human_dns = human_file.readlines()
     #args = parser.parse_args()
-    train()
+    train(human_dns, bot_dns)

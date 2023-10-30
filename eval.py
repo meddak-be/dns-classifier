@@ -1,9 +1,11 @@
 import argparse
 import pathlib
+import pandas as pd
 import joblib
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.preprocessing import LabelEncoder
+from train import parseAndAdd, extractFeatures
 
 
 parser = argparse.ArgumentParser(description="Dataset evaluation")
@@ -24,17 +26,24 @@ def eval():
     
     with open('eval1_botlist.txt', 'r') as botlist:
         bots = list(botlist.readlines())
+    bots = [bot.rstrip('\n') for bot in bots]
     
-    dns_requests = []
-    dns_responses = []
-    for entry in test:
-        if '> one.one.one.one.domain' in entry:
-            dns_requests.append(entry)
-        elif 'one.one.one.one.domain >' in entry:
-            dns_responses.append(entry)
 
 
-    combined_test_data = [req.strip() + '\n' + res.strip() for req, res in zip(dns_requests, dns_responses)]
+    d, l = parseAndAdd(test, "")
+    data = pd.DataFrame(d)
+    data = extractFeatures(data, l)
+
+    l = ["human"]*len(data)
+    for i, val in enumerate(data["req_src"]):
+        if val.split(".")[0] in bots:
+            l[i] = "bot"
+            print("added ", val, " as bot")
+
+    exit(0)
+
+
+
     
     vectorizer = CountVectorizer()
     X_test = vectorizer.fit_transform(combined_test_data)
