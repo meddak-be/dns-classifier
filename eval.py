@@ -6,6 +6,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.preprocessing import LabelEncoder
 from train import parseAndAdd, extractFeatures
+from sklearn.preprocessing import OneHotEncoder
 
 
 parser = argparse.ArgumentParser(description="Dataset evaluation")
@@ -40,7 +41,15 @@ def eval():
             l[i] = "bot"
             print("added ", val, " as bot")
 
+
+    encoder = OneHotEncoder(sparse_output=True) # sparse_output means that the output will be a sparse matrix
+    # drop column labels
+    toencode = data.drop(columns=['labels'])
+    encoded_data = encoder.fit_transform(toencode)
+    print(encoded_data.shape[1])
     exit(0)
+    y_pred = classifier.predict(encoded_data)
+    
 
 
 
