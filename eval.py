@@ -5,7 +5,7 @@ import joblib
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.preprocessing import LabelEncoder
-from train import parseAndAdd, extractFeatures
+from train import parseAndAdd, extractFeatures, calculateFeatures
 from sklearn.preprocessing import OneHotEncoder
 
 
@@ -27,57 +27,70 @@ def eval():
     
     with open('eval1_botlist.txt', 'r') as botlist:
         bots = list(botlist.readlines())
+
     bots = [bot.rstrip('\n') for bot in bots]
     
 
 
-    d, l = parseAndAdd(test, "")
+    d, l = parseAndAdd(test, 0)
     data = pd.DataFrame(d)
     data = extractFeatures(data, l)
 
-    l = ["human"]*len(data)
-    for i, val in enumerate(data["req_src"]):
+    combined_data = calculateFeatures(data)
+
+    for i, val in enumerate(combined_data["req_src"]):
         if val.split(".")[0] in bots:
-            l[i] = "bot"
+            combined_data.at[i, "label"] = 1
             print("added ", val, " as bot")
 
-
-    encoder = OneHotEncoder(sparse_output=True) # sparse_output means that the output will be a sparse matrix
-    # drop column labels
-    toencode = data.drop(columns=['labels'])
-    encoded_data = encoder.fit_transform(toencode)
-    print(encoded_data.shape[1])
-    exit(0)
-    y_pred = classifier.predict(encoded_data)
-    
-
-
-
-    
-    vectorizer = CountVectorizer()
-    X_test = vectorizer.fit_transform(combined_test_data)
-    print(X_test.shape[1]) #number of rows
-
-
-    # Get all the rows that contains bot values to compare with the prediction
-    bots_token_rows = []
-    feature_names = vectorizer.get_feature_names_out()
-    for row_index in range(X_test.shape[0]):
-        row = X_test.getrow(row_index)
-        # Iterate through the non-zero elements of the row
-        for col_index, value in zip(row.indices, row.data):
-            #print(f"({row_index}, col : {col_index}) {value}")
-            token_val = feature_names[col_index]
-            if 'unamur' in token_val:
-                if token_val in bots:
-                    bots_token_rows.append(row_index)
-
+    # print(combined_data)
+    # combined_data.to_csv('eval_data.csv', index=False)
 
     # Make predictions using the trained classifier
-    y_pred = classifier.predict(X_test)
-    print(y_pred)
-    
+    combined_data_test = combined_data.drop(columns=['req_src', 'label'])
 
+    import numpy as np
+    human_threshold = 0.4  # Lower boundary for human probability
+    bot_threshold = 0.6
+    y_proba = classifier.predict_proba(combined_data_test)
+
+    y_pred = np.argmax(y_proba, axis=1)
+
+    mixed_behavior_indices = []
+    bots = []
+    for i, (human_prob, bot_prob) in enumerate(y_proba):
+        if human_prob > human_threshold and bot_prob < bot_threshold and human_prob < 1.0 and bot_prob > 0.0 :
+            mixed_behavior_indices.append(combined_data.at[i, "req_src"])
+        elif bot_prob == 1.0:
+            bots.append(combined_data.at[i, "req_src"])
+    print(mixed_behavior_indices)
+
+    # You could mark these instances as mixed for further analysis
+    for i in mixed_behavior_indices:
+        print(i, " is detected as mixed behavior : ", i in bots)
+    for j in bots:
+        print(j, " is detected as bot", j in bots)
+
+    exit(0)
+    y_pred = classifier.predict(combined_data_test)
+
+
+    # Print the accuracy score
+    print("Accuracy: ", accuracy_score(combined_data["label"], y_pred))
+
+    # Print the classification report
+    print("Classification Report")
+    print(classification_report(combined_data["label"], y_pred))
+    exit(0)
+    
+    total_bots = 0
+    for i, prediction in enumerate(y_pred):
+        if prediction == 1:
+            host = combined_data.at[i, "req_src"]
+            total_bots += 1
+            print("Detected ", host, " as bot")
+    
+    print("Total bots detected: ", total_bots)
 if __name__ == "__main__":
 
     #args = parser.parse_args()

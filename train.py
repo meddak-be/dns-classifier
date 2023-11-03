@@ -174,8 +174,12 @@ def parseAndAdd(data, label):
                     labels.append('human')
             else:
                 trans_port, trans_id = entry.split()[4].split(".")[1][:-1], re.sub(r'[^0-9]', '', entry.split()[5])
-                dataList.append({'Request': temp[trans_port+trans_id].split(), 'Response': entry.split()})
-                labelList.append(label)
+                try:
+                    dataList.append({'Request': temp[trans_port+trans_id].split(), 'Response': entry.split()})
+                    labelList.append(label)
+                except KeyError:
+                    # TODO handle response without request
+                    continue
 
     return dataList, labelList
 
@@ -215,11 +219,7 @@ def preprocessing(data1, data2):
 
     return extractFeatures(data, labels)
 
-def train(data1, data2):
-    
-    data = preprocessing(data1, data2)
-
-    # feature extraction
+def calculateFeatures(data):
     request_frequency = requestFrequency(data)
     unique_domain = uniqueDomainRequest(data)
     domain_length = domainLength(data)
@@ -229,10 +229,20 @@ def train(data1, data2):
     dataframes = [request_frequency, unique_domain, domain_length, request_size, query_type]
 
     combined_data = dataframes[0]
-    pd.set_option('display.max_colwidth', None)
+    #pd.set_option('display.max_colwidth', None)
     for df in dataframes[1:]:
         # Merge the current dataframe with the combined_df on 'host' and 'label'
         combined_data = pd.merge(combined_data, df, on=['req_src', 'label'], how='outer')
+
+    return combined_data
+
+def train(data1, data2):
+    
+    data = preprocessing(data1, data2)
+
+    # feature extraction
+    combined_data = calculateFeatures(data)
+
     # drop the req_src column as it is not needed anymore
     combined_data = combined_data.drop(columns=['req_src'])
     
