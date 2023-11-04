@@ -13,10 +13,6 @@ from sklearn.preprocessing import OneHotEncoder
 import re
 
 
-parser = argparse.ArgumentParser(description="Optional classifier training")
-parser.add_argument("--webclients", required=True, type=pathlib.Path)
-parser.add_argument("--bots", required=True, type=pathlib.Path)
-parser.add_argument("--output", required=True, type=pathlib.Path)
 
 
 def tcp_to_dns(temp_tcp, entry_list):
@@ -331,7 +327,7 @@ def train(data1, data2):
     combined_data = combined_data.drop(columns=['req_src'])
 
     # Save the combined_data to a csv file
-    combined_data.to_csv('combined_data.csv', index=False)
+    # combined_data.to_csv('combined_data.csv', index=False)
 
     # Split the temp_data into training and testing sets
     X_train, X_test, y_train, y_test = train_test_split(combined_data.drop('label', axis=1), combined_data['label'], test_size=0.4, random_state=42)
@@ -366,17 +362,36 @@ def train(data1, data2):
     # ==================================
 
 
-    # Save the trained classifier for later use
-    import joblib
-    joblib.dump(rf_classifier, 'dns_classifier_model.pkl')
+    
+    return rf_classifier
+
+
+
+
+parser = argparse.ArgumentParser(description="Optional classifier training", usage="python3 train.py --webclients webclients_tcpdump.txt --bots bots_tcpdump.txt --output dns_classifier_model.pkl")
+parser.add_argument("--webclients", required=True, type=pathlib.Path)
+parser.add_argument("--bots", required=True, type=pathlib.Path)
+parser.add_argument("--output", required=True, type=pathlib.Path)
 
 
 if __name__ == "__main__":
-    with open('bots_tcpdump.txt', 'r') as bot_file:
+    
+    args = parser.parse_args()
+    webclients_file = args.webclients
+    bots_file = args.bots
+    output_file = args.output
+
+    with open(bots_file, 'r') as bot_file: # 'bots_tcpdump.txt'
         bot_dns = bot_file.readlines()
 
     # Read the human DNS request file
-    with open('webclients_tcpdump.txt', 'r') as human_file:
+    with open(webclients_file, 'r') as human_file: # 'webclients_tcpdump.txt'
         human_dns = human_file.readlines()
-    #args = parser.parse_args()
-    train(human_dns, bot_dns)
+
+    classifier = train(human_dns, bot_dns)
+    
+    # Save the trained classifier for later use
+    import joblib
+    joblib.dump(classifier, output_file) # 'dns_classifier_model.pkl')
+
+    # Usage example: python3 train.py --webclients webclients_tcpdump.txt --bots bots_tcpdump.txt --output dns_classifier_model.pkl
