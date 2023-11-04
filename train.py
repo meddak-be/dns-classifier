@@ -75,12 +75,19 @@ def requestFrequency(data):
 
 def tldRequest(data):
     """
-    Top-Level Domain (TLD) Requested
+    Count Unique Top-Level Domain (TLD) Requested
     """
-    # TODO
     data['tld'] = data['req_dom'].str.extract(r'(\.[a-zA-Z]{2,})$')
 
-    print(data[['req_dom', 'tld']])
+    # Sum of TLDs per host
+    tld_count = data.groupby(['req_src', 'label', 'tld'])['tld'].count().reset_index(name='tld_count')
+
+    # tld_count == 1 ( requested once only ) or if tld_count > 1 ( requested more than once ) then 0
+    tld_count['tld_count'] = tld_count['tld_count'].apply(lambda x: 1 if x == 1 else 0)
+
+    # Number of unique TLDs per host (sum of tld_count) requested once only
+    tld = tld_count.groupby(['req_src', 'label'])['tld_count'].sum().reset_index(name='tld_count')
+    return tld
 
 
 def uniqueDomainRequest(data):
@@ -109,8 +116,19 @@ def domainLength(data):
     return mean_domain_length_per_host
 
 def intervalBetweenRequests(data):
-    # TODO
-    pass
+    """
+    The time between successive requests.
+    Mean of the interval between requests per host
+    """
+    data['req_ts'] = pd.to_datetime(data['req_ts'], format="%H:%M:%S.%f")  #datetime conversion
+    data['req_ts_lag'] = data.groupby(['req_src', 'label'])['req_ts'].shift(1)  # Get the previous request timestamp for each host
+    data['interval'] = data['req_ts'] - data['req_ts_lag']  # Calculate the interval between the current request and the previous request
+    data['interval'] = data['interval'].dt.total_seconds()  # Convert the interval to seconds
+
+    # Calculate the mean interval between requests per host
+    mean_interval_between_requests_per_host = data.groupby(['req_src', 'label'])['interval'].mean().reset_index(name='mean_interval_between_requests')
+
+    return mean_interval_between_requests_per_host
     
 def requestSize(data):
     """
@@ -121,6 +139,57 @@ def requestSize(data):
     # mean calculation
     mean_request_size_per_host = data.groupby(['req_src', 'label'])['req_size'].mean().reset_index(name='mean_request_size')
     return mean_request_size_per_host
+
+def entropy(string):
+    """
+    Calculate the entropy of a given string
+    """
+    prob = [float(string.count(c)) / len(string) for c in dict.fromkeys(list(string))]
+    entropy = - sum([p * np.log2(p) for p in prob])
+    return entropy
+
+def entropyDomain(data):
+    """
+    Calculate the entropy of the domain name per host
+    """
+    data['entropy'] = data['req_dom'].apply(lambda x: entropy(x))
+    mean_entropy_per_host = data.groupby(['req_src', 'label'])['entropy'].mean().reset_index(name='mean_entropy')
+    return mean_entropy_per_host
+
+def tcpOrUdp(data):
+    """
+    Return if the request is TCP or UDP
+    """
+    # TODO
+    pass
+
+def failedRequest(data):
+    """
+    Return the number of failed requests per host
+    """
+    # TODO
+    pass
+
+def numberOfRequestOfSameDomain(data):
+    """
+    Return the number of requests of the same domain per host
+    """
+    # count the number of requests of the same domain for same host req_src
+    data['req_dom_count'] = data.groupby(['req_src', 'label', 'req_dom'])['req_dom'].transform('count')
+
+    # get the mean of the number of requests of the same domain per host
+    mean_req_dom_count_per_host = data.groupby(['req_src', 'label'])['req_dom_count'].mean().reset_index(name='mean_req_dom_count')
+
+    return mean_req_dom_count_per_host
+    
+def subdomainCount(data):
+    """
+    Frequent access to numerous subdomains might indicate automated processes.
+    Calculate the mean number of subdomains per host
+    """
+    data['subdomain_count'] = data['req_dom'].str.count('\.') -1 # example : www.google.com -> 2-1 = 1
+    mean_subdomain_count_per_host = data.groupby(['req_src', 'label'])['subdomain_count'].mean().reset_index(name='mean_subdomain_count')
+    return mean_subdomain_count_per_host
 
 def queryType(data):
     """
@@ -186,7 +255,7 @@ def parseAndAdd(data, label):
 def extractFeatures(data, labels):
     #pd.set_option('display.max_colwidth', None)
 
-    data['proto'] = 1
+    data['proto'] = 1 # 1 for TCP, 0 for UDP (TODO)
     data['req_ts'] = data['Request'].str[0]
     sp = data['Request'].str[2].str.split('.', expand=True)
     data['req_src'],  data['req_port'] = sp[0], sp[1]
@@ -220,13 +289,26 @@ def preprocessing(data1, data2):
     return extractFeatures(data, labels)
 
 def calculateFeatures(data):
+    
+    # === features added ===
+    entropy_domain = entropyDomain(data)
+    subdomain_count = subdomainCount(data)
+    numberOfRequestOfSame_domain = numberOfRequestOfSameDomain(data) # seem very relevant
+    # failed_request = failedRequest(data)
+    # tcp_udp = tcpOrUdp(data)
+
+    # === features todos done ===
+    tld_count = tldRequest(data)
+    interval_btw_req = intervalBetweenRequests(data)
+
+    # === other features ===
     request_frequency = requestFrequency(data)
     unique_domain = uniqueDomainRequest(data)
     domain_length = domainLength(data)
     request_size = requestSize(data)
     query_type = queryType(data)
 
-    dataframes = [request_frequency, unique_domain, domain_length, request_size, query_type]
+    dataframes = [request_frequency, unique_domain, domain_length, request_size, query_type, tld_count, interval_btw_req, numberOfRequestOfSame_domain, subdomain_count, entropy_domain]
 
     combined_data = dataframes[0]
     #pd.set_option('display.max_colwidth', None)
@@ -245,7 +327,8 @@ def train(data1, data2):
 
     # drop the req_src column as it is not needed anymore
     combined_data = combined_data.drop(columns=['req_src'])
-    
+
+    # Save the combined_data to a csv file
     combined_data.to_csv('combined_data.csv', index=False)
 
     # Split the temp_data into training and testing sets
