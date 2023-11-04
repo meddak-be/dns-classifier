@@ -309,6 +309,8 @@ def calculateFeatures(data):
     query_type = queryType(data)
 
     dataframes = [request_frequency, unique_domain, domain_length, request_size, query_type, tld_count, interval_btw_req, numberOfRequestOfSame_domain, subdomain_count, entropy_domain]
+    
+    # dataframes = dataframes[:2] # test of accuracy with only 2 features
 
     combined_data = dataframes[0]
     #pd.set_option('display.max_colwidth', None)
@@ -332,19 +334,37 @@ def train(data1, data2):
     combined_data.to_csv('combined_data.csv', index=False)
 
     # Split the temp_data into training and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(combined_data.drop('label', axis=1), combined_data['label'], test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(combined_data.drop('label', axis=1), combined_data['label'], test_size=0.4, random_state=42)
 
-    print("started training")
+    # ==================================
+    # ==== Random Forest Classifier ====
+    # ==================================
+    print("\n ==== RandomForestClassifier - started training ==== ")
     rf_classifier = RandomForestClassifier(n_estimators=100, random_state=42)
     rf_classifier.fit(X_train, y_train)
-    
     y_pred = rf_classifier.predict(X_test)
-
-    # Evaluate the classifier
     accuracy = accuracy_score(y_test, y_pred)
 
     # Print the evaluation metrics
     print(f'Accuracy: {accuracy}')
+    #print(classification_report(y_test, y_pred))
+    #print(confusion_matrix(y_test, y_pred))
+    # ==================================
+
+
+    # ==================================
+    # ========= SVM Classifier =========
+    # ==================================
+    print("\n ==== SVM - started training ==== ")
+    svm_classifier = SVC(kernel='linear')
+    svm_classifier.fit(X_train, y_train)
+    y_pred = svm_classifier.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f'Accuracy: {accuracy}')
+    #print(classification_report(y_test, y_pred))
+    #print(confusion_matrix(y_test, y_pred))
+    # ==================================
+
 
     # Save the trained classifier for later use
     import joblib
