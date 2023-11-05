@@ -13,20 +13,8 @@ from sklearn.preprocessing import OneHotEncoder
 import re
 
 
-
-
-def tcp_to_dns(temp_tcp, entry_list):
-    # TCP format
-    # 11:47:58.237702 IP one.one.one.one.domain > unamur09.60934: Flags [S.], seq 4207413419, ack 2913238429, win 65535, options [mss 1452,nop,nop,sackOK,nop,wscale 10], length 0
-    trans_port = entry_list[4].split(".")[1][:-1]
-    trans_id = re.sub(r'[^0-9]', '', entry_list[5])
-
-    req = temp_tcp[trans_port+trans_id].split()
-    res = entry_list
-    res_flags = res[6].split("[")[1].split("]")[0]
+def tcpParseRequest(req)->str:
     req_flags = req[6].split("[")[1].split("]")[0]
-    # P : push, R : reset, S : syn, F : fin, A : ack, . : no flag, P. : push and no flag, PA : push and ack
-    
     format_req = "{} IP {} > {}: {} {} ({})" #11:47:58.460738 IP unamur026.60731 > one.one.one.one.domain: 23645+ A? usher.ttvnw.net. (33)
     if 'P' in req_flags:
         # format: 11:47:58.361458 IP unamur09.60934 > one.one.one.one.domain: Flags [P.], seq 1:77, ack 1, win 83, length 76 34858+ A? static.bookmsg.com. (74)
@@ -36,11 +24,15 @@ def tcp_to_dns(temp_tcp, entry_list):
         dst_ip = req[4].rstrip(':')
         trans_id = req[15]
         #query_type = req[16] # A? or AAAA?
-        query_type_and_domain = req[16:].rstrip(req[-1])  # A? abc.com.
+        
+        query_type_and_domain = " ".join(req[16:-1])  # A? abc.com.
         query_size = req[-1].rstrip(')').lstrip('(') 
         
-        req = format_req.format(timestamp, src_ip, dst_ip, trans_id, query_type_and_domain, query_size)
-    
+        _req = format_req.format(timestamp, src_ip, dst_ip, trans_id, query_type_and_domain, query_size)
+    return _req
+
+def tcpParseResponse(res)->str:
+    res_flags = res[6].split("[")[1].split("]")[0]
     format_res = "{} IP {} > {}: {} {} {} ({})" # 11:47:58.476523 IP one.one.one.one.domain > unamur026.60731: 23645 2/0/0 A 23.160.0.254, A 192.108.239.254 (65)
     if 'P' in res_flags: # push in response packet -> DNS response
         # format : 11:47:58.381794 IP one.one.one.one.domain > unamur09.60934: Flags [P.], seq 1:631, ack 77, win 64, length 630 34858 37/0/0 A 88.198.209.15, A 81.81.81.81 (46)
@@ -48,13 +40,13 @@ def tcp_to_dns(temp_tcp, entry_list):
         timestamp = res[0]
         src_ip = res[2]
         dst_ip = res[4].rstrip(':')
-        trans_id = req[15] # same as request
+        trans_id = res[15] # same as request
         n_response = res[16] # 2/0/0
-        response_type = res[17:].rstrip(req[-1]) # A 1.1.1.1, A 2.2.2.2
+        response_type = " ".join(res[17:-1]) # A 1.1.1.1, A 2.2.2.2
         response_size = res[-1].rstrip(')').lstrip('(')
 
-        res = format_res.format(timestamp, src_ip, dst_ip, trans_id, n_response, response_type, response_size)
-    return req, res
+        _res = format_res.format(timestamp, src_ip, dst_ip, trans_id, n_response, response_type, response_size)
+    return _res
 
 def requestFrequency(data):
     """
@@ -111,15 +103,21 @@ def domainLength(data):
 
     return mean_domain_length_per_host
 
-def intervalBetweenRequests(data):
+def intervalBetweenRequests(data: pd.DataFrame):
     """
     The time between successive requests.
     Mean of the interval between requests per host
     """
+    # Convert the req_ts column to datetime format
     data['req_ts'] = pd.to_datetime(data['req_ts'], format="%H:%M:%S.%f")  #datetime conversion
-    data['req_ts_lag'] = data.groupby(['req_src', 'label'])['req_ts'].shift(1)  # Get the previous request timestamp for each host
-    data['interval'] = data['req_ts'] - data['req_ts_lag']  # Calculate the interval between the current request and the previous request
-    data['interval'] = data['interval'].dt.total_seconds()  # Convert the interval to seconds
+    # Sort the data by host and timestamp
+    data = data.sort_values(by=['req_src', 'req_ts'])
+
+    # Calculate the interval between requests
+    data['interval'] = data.groupby(['req_src', 'label'])['req_ts'].diff(1).dt.total_seconds()
+
+    # Replace the NaN values with 0
+    data['interval'] = data['interval'].fillna(0)
 
     # Calculate the mean interval between requests per host
     mean_interval_between_requests_per_host = data.groupby(['req_src', 'label'])['interval'].mean().reset_index(name='mean_interval_between_requests')
@@ -152,28 +150,15 @@ def entropyDomain(data):
     mean_entropy_per_host = data.groupby(['req_src', 'label'])['entropy'].mean().reset_index(name='mean_entropy')
     return mean_entropy_per_host
 
-def tcpOrUdp(data):
-    """
-    Return if the request is TCP or UDP
-    """
-    # TODO
-    pass
-
-def failedRequest(data):
-    """
-    Return the number of failed requests per host
-    """
-    # TODO
-    pass
 
 def numberOfRequestOfSameDomain(data):
     """
     Return the number of requests of the same domain per host
     """
-    # count the number of requests of the same domain for same host req_src
+    # 1. count the number of requests of the same domain  (for each host , label)
     data['req_dom_count'] = data.groupby(['req_src', 'label', 'req_dom'])['req_dom'].transform('count')
 
-    # get the mean of the number of requests of the same domain per host
+    # 2. get the mean of the number of requests of the same domain per host
     mean_req_dom_count_per_host = data.groupby(['req_src', 'label'])['req_dom_count'].mean().reset_index(name='mean_req_dom_count')
 
     return mean_req_dom_count_per_host
@@ -216,31 +201,43 @@ def parseAndAdd(data, label):
     labelList = []
     temp = {} #stores request
     for entry in data:
+        entry_list = entry.split() # for optimization (instead of calling split() each time)
         if '> one.one.one.one.domain' in entry:
             if "Flags" in entry:
-                continue
-                # parse the TCP packets of this form : 13:04:06.248756 IP unamur232.46230 > one.one.one.one.domain: Flags [S], seq 2432180501, win 42340, options [mss 1460,sackOK,TS val 3460327790 ecr 0,nop,wscale 9], length 0
-                # 11:48:05.551485 IP unamur09.60936 > one.one.one.one.domain: Flags [P.], seq 1:77, ack 1, win 83, length 76 12527+ A? static.bookmsg.com. (74)
+                # ==== TCP request ====
+                #continue
+                # ==== parse the TCP packets  ====
                 flags = entry_list[6].split("[")[1].split("]")[0]
                 if 'P' in flags:
                     trans_port, trans_id = entry_list[2].split(".")[1], re.sub(r'[^0-9]', '', entry_list[15])
-                    temp_tcp[trans_port+trans_id] = entry
+                    #print("Req1",trans_port, trans_id, " => ", trans_port+ trans_id)
+                    temp[trans_port+trans_id] = entry # TCP request 
             else:
-                trans_port, trans_id = entry.split()[2].split(".")[1], re.sub(r'[^0-9]', '', entry.split()[5][:-1]) 
+                # ==== UDP request ====
+                # ==== parse the UDP packets ====
+                trans_port, trans_id = entry_list[2].split(".")[1], re.sub(r'[^0-9]', '', entry_list[5][:-1]) 
                 temp[trans_port+trans_id] = entry
         elif 'one.one.one.one.domain >' in entry:
             if "Flags" in entry:
-                continue
+                # ==== TCP response ====
+                #continue
                 flags = entry_list[6].split("[")[1].split("]")[0]
                 if 'P' in flags: # push TCP packet
-                    req, res = tcp_to_dns(temp_tcp, entry_list)
+                    trans_port, trans_id = entry_list[4].split(".")[1][:-1], re.sub(r'[^0-9]', '', entry_list[15])
+                    if not ((trans_port+trans_id) in temp):
+                        # print("Ignore tcp packet: id=", trans_id ," : port=", trans_port)
+                        continue
 
-                    temp_data.append({'Request': req, 'Response': res})
-                    labels.append('human')
+                    req_str = temp[trans_port+trans_id]
+                    res, req = tcpParseResponse(entry_list), tcpParseRequest(req_str.split()) # TCP response
+
+                    dataList.append({'Request': req.split(), 'Response': res.split(), 'Protocol': 'TCP'})
+                    labelList.append(label)
             else:
-                trans_port, trans_id = entry.split()[4].split(".")[1][:-1], re.sub(r'[^0-9]', '', entry.split()[5])
+                # ==== UDP response ====
+                trans_port, trans_id = entry_list[4].split(".")[1][:-1], re.sub(r'[^0-9]', '', entry_list[5])
                 try:
-                    dataList.append({'Request': temp[trans_port+trans_id].split(), 'Response': entry.split()})
+                    dataList.append({'Request': temp[trans_port+trans_id].split(), 'Response': entry.split(), 'Protocol': 'UDP'})
                     labelList.append(label)
                 except KeyError:
                     # TODO handle response without request
@@ -251,7 +248,8 @@ def parseAndAdd(data, label):
 def extractFeatures(data, labels):
     #pd.set_option('display.max_colwidth', None)
 
-    data['proto'] = 1 # 1 for TCP, 0 for UDP (TODO)
+    # 1 for TCP, 0 for UDP 
+    data['proto'] = data['Protocol'].apply(lambda x: 1 if x == 'TCP' else 0)
     data['req_ts'] = data['Request'].str[0]
     sp = data['Request'].str[2].str.split('.', expand=True)
     data['req_src'],  data['req_port'] = sp[0], sp[1]
@@ -266,16 +264,17 @@ def extractFeatures(data, labels):
     data['res_ips'] = data['Response'].str[9:-1].str.join(', ')
     data['res_size'] = data['Response'].str[-1].str.strip("()")
 
-    selected_features = data[['req_ts', 'req_src', 'req_dest', 'req_type', 'req_dom', 'req_size', 'res_ts', 'res_src', 'res_dest', 'res_ips']]
-    # add labels
+    selected_features = data[['req_ts','proto', 'req_src', 'req_dest', 'req_type', 'req_dom', 'req_size', 'res_ts', 'res_src', 'res_dest', 'res_ips']]
+    selected_features = selected_features.copy()
+    # add labels 
     selected_features['label'] = labels
 
     return selected_features
 
 def preprocessing(data1, data2):
     #human = 0, bot = 1
-    d, l = parseAndAdd(data1, 0)
-    d2, l2 = parseAndAdd(data2, 1)
+    d, l = parseAndAdd(data1, 0) # human
+    d2, l2 = parseAndAdd(data2, 1) # bot
 
     data =  d + d2
     labels = l+l2
@@ -284,30 +283,25 @@ def preprocessing(data1, data2):
 
     return extractFeatures(data, labels)
 
-def calculateFeatures(data):
+def calculateFeatures(data: pd.DataFrame):
     
-    # === features added ===
-    entropy_domain = entropyDomain(data)
-    subdomain_count = subdomainCount(data)
-    numberOfRequestOfSame_domain = numberOfRequestOfSameDomain(data) # seem very relevant
-    # failed_request = failedRequest(data)
-    # tcp_udp = tcpOrUdp(data)
+    # === Features ===
+    # entropy_domain = entropyDomain(data)                # Calculate the entropy of the domain name per host
+    subdomain_count = subdomainCount(data)              # Count the mean number of subdomains per host
+    nbrReqSame_domain = numberOfRequestOfSameDomain(data) # Count the mean number of requests of the same domain per host (seem very relevant)
 
-    # === features todos done ===
-    tld_count = tldRequest(data)
-    interval_btw_req = intervalBetweenRequests(data)
+    tld_count = tldRequest(data)                        # Count Unique Top-Level Domain (TLD) Requested
+    interval_btw_req = intervalBetweenRequests(data)    # mean of the interval between requests per host
+    request_frequency = requestFrequency(data)          # mean of the frequency of requests per hour for each given IP
+    unique_domain = uniqueDomainRequest(data)           # unique domain per hour
+    domain_length = domainLength(data)                  # mean domain length per host
+    request_size = requestSize(data)                    # mean request size per host
+    query_type = queryType(data)                        # most frequent query type per host
 
-    # === other features ===
-    request_frequency = requestFrequency(data)
-    unique_domain = uniqueDomainRequest(data)
-    domain_length = domainLength(data)
-    request_size = requestSize(data)
-    query_type = queryType(data)
+    proto = data.groupby(['req_src', 'label'])['proto'].sum().reset_index(name='proto') # Protocol: 1 for TCP, 0 for UDP
 
-    dataframes = [request_frequency, unique_domain, domain_length, request_size, query_type, tld_count, interval_btw_req, numberOfRequestOfSame_domain, subdomain_count, entropy_domain]
+    dataframes = [proto, request_frequency, unique_domain, domain_length, request_size, query_type, tld_count, interval_btw_req, nbrReqSame_domain, subdomain_count]
     
-    # dataframes = dataframes[:2] # test of accuracy with only 2 features
-
     combined_data = dataframes[0]
     #pd.set_option('display.max_colwidth', None)
     for df in dataframes[1:]:
@@ -316,51 +310,70 @@ def calculateFeatures(data):
 
     return combined_data
 
-def train(data1, data2):
-    
-    data = preprocessing(data1, data2)
+def svmClassifier(X_train, y_train, X_test, y_test):
+    # ==================================
+    # ========= SVM Classifier =========
+    # ==================================
+    print("\n ==== SVM - started training ==== ")
 
-    # feature extraction
-    combined_data = calculateFeatures(data)
+    svm_classifier = SVC(kernel='linear')
+    svm_classifier.fit(X_train, y_train)
+    y_pred = svm_classifier.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
 
-    # drop the req_src column as it is not needed anymore
-    combined_data = combined_data.drop(columns=['req_src'])
+    # === Print the evaluation metrics ===
+    print(f'Accuracy: {accuracy}')
 
-    # Save the combined_data to a csv file
-    # combined_data.to_csv('combined_data.csv', index=False)
+    # print(classification_report(y_test, y_pred))
+    # print(confusion_matrix(y_test, y_pred))
+    # ==================================
+    return svm_classifier
 
-    # Split the temp_data into training and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(combined_data.drop('label', axis=1), combined_data['label'], test_size=0.4, random_state=42)
-
+def rfClassifier(X_train, y_train, X_test, y_test):
     # ==================================
     # ==== Random Forest Classifier ====
     # ==================================
     print("\n ==== RandomForestClassifier - started training ==== ")
+
     rf_classifier = RandomForestClassifier(n_estimators=100, random_state=42)
     rf_classifier.fit(X_train, y_train)
     y_pred = rf_classifier.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
 
-    # Print the evaluation metrics
+    # === Print the evaluation metrics ===
     print(f'Accuracy: {accuracy}')
-    #print(classification_report(y_test, y_pred))
-    #print(confusion_matrix(y_test, y_pred))
-    # ==================================
 
+    # print(classification_report(y_test, y_pred))
+    # print(confusion_matrix(y_test, y_pred))
+    # ==================================
+    return rf_classifier
+
+def train(data1, data2):
+    
+    data = preprocessing(data1, data2)
+
+    # === Feature extraction ===
+    combined_data = calculateFeatures(data)
+
+    # === Drop the req_src column as it is not needed for training ===
+    combined_data = combined_data.drop(columns=['req_src'])
+
+    # === Save the combined_data to a csv file ===
+    # combined_data.to_csv('combined_data.csv', index=False)
+
+    # === Split dataset into training and testing sets ===
+    X_train, X_test, y_train, y_test = train_test_split(combined_data.drop('label', axis=1), combined_data['label'], test_size=0.4, random_state=42)
+
+
+    # ==================================
+    # ==== Random Forest Classifier ====
+    # ==================================
+    rf_classifier = rfClassifier(X_train, y_train, X_test, y_test)
 
     # ==================================
     # ========= SVM Classifier =========
     # ==================================
-    print("\n ==== SVM - started training ==== ")
-    svm_classifier = SVC(kernel='linear')
-    svm_classifier.fit(X_train, y_train)
-    y_pred = svm_classifier.predict(X_test)
-    accuracy = accuracy_score(y_test, y_pred)
-    print(f'Accuracy: {accuracy}')
-    #print(classification_report(y_test, y_pred))
-    #print(confusion_matrix(y_test, y_pred))
-    # ==================================
-
+    # svm_classifier = svmClassifier(X_train, y_train, X_test, y_test)
 
     
     return rf_classifier
