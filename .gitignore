@@ -1,3 +1,9 @@
 ./dns_classifier_model.pkl
 dns_classifier_model.pkl
 rapport_idea.txt
+bots_tcpdump.txt
+webclient_tcpdump.txt
+eval1_botlist.txt
+eval2_botlist.txt
+eval1_tcpdump.txt
+eval2_tcpdump.txt

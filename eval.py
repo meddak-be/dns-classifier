@@ -2,12 +2,8 @@ import argparse
 import pathlib
 import pandas as pd
 import joblib
-from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-from sklearn.preprocessing import LabelEncoder
-from train import parseAndAdd, extractFeatures, calculateFeatures
-from sklearn.preprocessing import OneHotEncoder
-
+from utils import *
+from features_extractor import *
 
 
 def printResult(combined_data, y_pred, output_file):
@@ -49,7 +45,7 @@ def eval(output_file=None, trained_model=None, dataset=None):
     # ========= PARSE ===============
     d, l = parseAndAdd(test, 0)
     data = pd.DataFrame(d)
-    data = extractFeatures(data, l)
+    data = extractRawData(data, l)
 
     combined_data = calculateFeatures(data)
 
@@ -83,11 +79,11 @@ def eval(output_file=None, trained_model=None, dataset=None):
     # print(mixed_behavior_indices)
 
     # You could mark these instances as mixed for further analysis
-    if args.verbose:
-        for i in mixed_behavior_indices:
-            print(i, " is detected as mixed behavior : ", i in bots)
-        for j in bots:
-            print(j, " is detected as bot", j in bots)
+
+    for i in mixed_behavior_indices:
+        print(i, " is detected as mixed behavior : ", i in bots)
+    for j in bots:
+        print(j, " is detected as bot", j in bots)
 
     #exit(0)
 
