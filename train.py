@@ -5,6 +5,8 @@ from sklearn.svm import SVC
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
 from features_extractor import *
 from utils import *
 
@@ -20,7 +22,39 @@ def preprocessing(data1, data2):
 
     return extractRawData(data, labels)
 
+def neuralNetworkClassifier(X_train, y_train, X_test, y_test):
+        # Create MLP classifier
+    # hidden_layer_sizes determines the size of the hidden layers; we choose one hidden layer with 100 neurons as an example.
+    # max_iter is the maximum number of iterations the solver will run for the neural network to converge
+    # We choose 'adam' as the solver for weight optimization, which is efficient for large datasets
+    # The 'relu' activation function is a common choice and works well in many situations
+    mlp_classifier = MLPClassifier(hidden_layer_sizes=(100,), max_iter=500, activation='relu', solver='adam')
 
+    # Fit the classifier to the data
+    mlp_classifier.fit(X_train, y_train)
+
+    # Make predictions on the test data
+    y_pred = mlp_classifier.predict(X_test)
+
+    # Calculate the accuracy
+    accuracy = accuracy_score(y_test, y_pred)
+    print("Neural Network Accuracy:", accuracy)
+
+def kNNClassifier(X_train, y_train, X_test, y_test):
+    # Create KNN classifier
+    # n_neighbors is a metaparameter that indicates how many neighbors will vote on the class
+    # We choose 5 as a starting point, which is a common default number for KNN
+    knn_classifier = KNeighborsClassifier(n_neighbors=5)
+
+    # Fit the classifier to the data
+    knn_classifier.fit(X_train, y_train)
+
+    # Make predictions on the test data
+    y_pred = knn_classifier.predict(X_test)
+
+    # Calculate the accuracy
+    accuracy = accuracy_score(y_test, y_pred)
+    print("KNN Accuracy:", accuracy)
 
 def svmClassifier(X_train, y_train, X_test, y_test):
     # ==================================
@@ -28,7 +62,7 @@ def svmClassifier(X_train, y_train, X_test, y_test):
     # ==================================
     print("\n ==== SVM - started training ==== ")
 
-    svm_classifier = SVC(kernel='linear')
+    svm_classifier = SVC(kernel='rbf', gamma='scale')
     svm_classifier.fit(X_train, y_train)
     y_pred = svm_classifier.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
@@ -47,7 +81,7 @@ def rfClassifier(X_train, y_train, X_test, y_test):
     # ==================================
     print("\n ==== RandomForestClassifier - started training ==== ")
 
-    rf_classifier = RandomForestClassifier(n_estimators=100, random_state=42)
+    rf_classifier = RandomForestClassifier(n_estimators=100)
     rf_classifier.fit(X_train, y_train)
     y_pred = rf_classifier.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
