@@ -1,42 +1,38 @@
+"""
+Date:               11/2023
+Purpose:            Evaluate the classifier using the data from the tcpdump files
+Example Usage:      python3 eval.py --dataset evals/ --trained_model dns_classifier_model --output suspicious.txt
+"""
+
 import argparse
 import pathlib
-import pandas as pd
 import joblib
+import pandas as pd
+import os
+import sys
+
 from utils import *
 from features_extractor import *
 
 
-def printResult(combined_data, y_pred, output_file):
-    global args
-    total_bots = 0
-    for i, prediction in enumerate(y_pred):
-        if prediction == 1:
-            host = combined_data.at[i, "req_src"]
-            total_bots += 1
-            if args.verbose:
-                print("[ BOT ] Detected : ", host)
-            else:
-                print(host)
-            with open(output_file, "a") as output:
-                output.write(host + "\n")
-                
-    
-    print("Total bots detected: ", total_bots)
+def writeResults(botList, output_file):
+    with open(output_file, "w") as output:
+        for bot in botList:
+            output.write(bot + "\n")
 
-def eval(output_file=None, trained_model=None, dataset=None):
+def eval(output_file=None, trained_model=None, evalFile=None, botFile=None):
     global args
-    import joblib
-    from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
 
     # ========= LOAD ===============
     # Load the trained classifier
-    classifier = joblib.load(trained_model) #'dns_classifier_model.pkl')
+    classifier = joblib.load(trained_model)
 
     # Prepare the test data
-    with open('eval1_tcpdump.txt', 'r') as test_request_file:
+    with open(evalFile, 'r') as test_request_file:
         test = test_request_file.readlines()
     
-    with open('eval1_botlist.txt', 'r') as botlist:
+    with open(botFile, 'r') as botlist:
         bots = list(botlist.readlines())
 
     bots = [bot.rstrip('\n') for bot in bots]
@@ -51,23 +47,15 @@ def eval(output_file=None, trained_model=None, dataset=None):
 
     for i, val in enumerate(combined_data["req_src"]):
         if val.split(".")[0] in bots:
-            combined_data.at[i, "label"] = 1
-            # print("added ", val, " as bot")
+            combined_data.at[i, "label"] = 1 # bot
 
-    # print(combined_data)
-    # combined_data.to_csv('eval_data.csv', index=False)
-
-    # Make predictions using the trained classifier
     combined_data_test = combined_data.drop(columns=['req_src', 'label'])
 
     # ====================================================================================================
     # ========= Proba (human+bot) ===============
-    import numpy as np
-    human_threshold = 0.4  # Lower boundary for human probability
+    human_threshold = 0.4 
     bot_threshold = 0.6
     y_proba = classifier.predict_proba(combined_data_test)
-
-    y_pred = np.argmax(y_proba, axis=1)
 
     mixed_behavior_indices = []
     bots = []
@@ -76,33 +64,19 @@ def eval(output_file=None, trained_model=None, dataset=None):
             mixed_behavior_indices.append(combined_data.at[i, "req_src"])
         elif bot_prob == 1.0:
             bots.append(combined_data.at[i, "req_src"])
-    # print(mixed_behavior_indices)
 
-    # You could mark these instances as mixed for further analysis
-
+    bot_list = []
     for i in mixed_behavior_indices:
-        print(i, " is detected as mixed behavior : ", i in bots)
+        message = f"{i} is detected as mixed behavior : {i in bots}"
+        print(message)
+        bot_list.append(message)
     for j in bots:
-        print(j, " is detected as bot", j in bots)
-
-    #exit(0)
-
-    # ====================================================================================================
-    # ========= Predict ===============
-    y_pred = classifier.predict(combined_data_test)
-
-    if args.verbose:
-        # Print the accuracy score
-        print("Accuracy: ", accuracy_score(combined_data["label"], y_pred))
-
-        # Print the classification report
-        print("Classification Report: \n",classification_report(combined_data["label"], y_pred))
-        #exit(0)
+        message = f"{j} is detected as bot : {j in bots}"
+        print(message)
+        bot_list.append(message)
     
-    # ========= Print result ===============
-    printResult(combined_data, y_pred, output_file)
+    writeResults(bot_list, output_file)
 
-    print("Mixed behavior {}:  ".format(len(mixed_behavior_indices)), ", ".join(mixed_behavior_indices))
 
 
 
@@ -121,7 +95,31 @@ if __name__ == "__main__":
         print("Verbose mode on")
     
     dataset = args.dataset # TODO: use this
-    trained_model = args.trained_model # 'dns_classifier_model.pkl'
+    if not os.path.isdir(dataset):
+        print(f"The directory {dataset} does not exist.")
+        sys.exit(1)
+    try:
+        files = [f for f in os.listdir(dataset) if os.path.isfile(os.path.join(dataset, f))]
+    except OSError as e:
+        print(f"An error occurred when listing files in {dataset}: {e}")
+        sys.exit(1)
+
+    # Check if there are at least two files in the directory
+    if len(files) < 2:
+        print(f"The directory {dataset} does not contain enough files.")
+        sys.exit(1)
+
+    bot_file = os.path.join(dataset, files[0])
+    eval_file = os.path.join(dataset, files[1])
+
+    trained_model = args.trained_model 
     output_file = args.output
 
-    eval(output_file, trained_model, dataset)
+    print(f"Starting evaluation with the following parameters:")
+    print(f"Bot file: {bot_file}")
+    print(f"Eval file: {eval_file}")
+    print(f"Trained model: {trained_model}")
+    print(f"Output file: {output_file}")
+
+
+    eval(output_file, trained_model, evalFile=eval_file, botFile=bot_file)

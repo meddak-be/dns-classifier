@@ -1,14 +1,26 @@
+"""
+Date:               11/2023
+Purpose:            Train the classifier using the data from the tcpdump files
+Example Usage:      python3 train.py --webclients webclients_tcpdump.txt --bots bots_tcpdump.txt --output dns_classifier_model.pkl
+"""
+
+
 import argparse
 import pathlib
 import pandas as pd
-from sklearn.svm import SVC
+
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
+
+from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
+from sklearn.tree import DecisionTreeClassifier
+
 from features_extractor import *
 from utils import *
+
 
 def preprocessing(data1, data2):
     #human = 0, bot = 1
@@ -23,38 +35,33 @@ def preprocessing(data1, data2):
     return extractRawData(data, labels)
 
 def neuralNetworkClassifier(X_train, y_train, X_test, y_test):
-        # Create MLP classifier
-    # hidden_layer_sizes determines the size of the hidden layers; we choose one hidden layer with 100 neurons as an example.
-    # max_iter is the maximum number of iterations the solver will run for the neural network to converge
-    # We choose 'adam' as the solver for weight optimization, which is efficient for large datasets
-    # The 'relu' activation function is a common choice and works well in many situations
+    # ==================================
+    # ========= Neural Nework Classifier =========
+    # ==================================
+    print("\n ==== Neural Network - started training ==== ")
     mlp_classifier = MLPClassifier(hidden_layer_sizes=(100,), max_iter=500, activation='relu', solver='adam')
-
-    # Fit the classifier to the data
     mlp_classifier.fit(X_train, y_train)
 
-    # Make predictions on the test data
     y_pred = mlp_classifier.predict(X_test)
 
-    # Calculate the accuracy
     accuracy = accuracy_score(y_test, y_pred)
-    print("Neural Network Accuracy:", accuracy)
+    #print("Neural Network Accuracy:", accuracy)
+    return mlp_classifier
 
 def kNNClassifier(X_train, y_train, X_test, y_test):
-    # Create KNN classifier
-    # n_neighbors is a metaparameter that indicates how many neighbors will vote on the class
-    # We choose 5 as a starting point, which is a common default number for KNN
+    # ==================================
+    # ========= kNN Classifier =========
+    # ==================================
+    print("\n ==== kNN - started training ==== ")
     knn_classifier = KNeighborsClassifier(n_neighbors=5)
 
-    # Fit the classifier to the data
     knn_classifier.fit(X_train, y_train)
 
-    # Make predictions on the test data
     y_pred = knn_classifier.predict(X_test)
 
-    # Calculate the accuracy
     accuracy = accuracy_score(y_test, y_pred)
-    print("KNN Accuracy:", accuracy)
+    #print("KNN Accuracy:", accuracy)
+    return knn_classifier
 
 def svmClassifier(X_train, y_train, X_test, y_test):
     # ==================================
@@ -67,12 +74,7 @@ def svmClassifier(X_train, y_train, X_test, y_test):
     y_pred = svm_classifier.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
 
-    # === Print the evaluation metrics ===
-    print(f'Accuracy: {accuracy}')
-
-    # print(classification_report(y_test, y_pred))
-    # print(confusion_matrix(y_test, y_pred))
-    # ==================================
+    #print(f'Accuracy: {accuracy}')
     return svm_classifier
 
 def rfClassifier(X_train, y_train, X_test, y_test):
@@ -81,18 +83,32 @@ def rfClassifier(X_train, y_train, X_test, y_test):
     # ==================================
     print("\n ==== RandomForestClassifier - started training ==== ")
 
+
+
     rf_classifier = RandomForestClassifier(n_estimators=100)
     rf_classifier.fit(X_train, y_train)
     y_pred = rf_classifier.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
 
     # === Print the evaluation metrics ===
+    #print(f'Accuracy: {accuracy}')
+    return rf_classifier
+
+def decisionTreeClassifier(X_train, y_train, X_test, y_test):
+    # ==================================
+    # ======= Decision Tree Classifier =======
+    # ==================================
+    print("\n ==== Decision Tree - started training ==== ")
+
+    dt_classifier = DecisionTreeClassifier()
+
+    dt_classifier.fit(X_train, y_train)
+
+    y_pred = dt_classifier.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
     print(f'Accuracy: {accuracy}')
 
-    # print(classification_report(y_test, y_pred))
-    # print(confusion_matrix(y_test, y_pred))
-    # ==================================
-    return rf_classifier
+    return dt_classifier
 
 def train(data1, data2):
     
@@ -104,25 +120,18 @@ def train(data1, data2):
     # === Drop the req_src column as it is not needed for training ===
     combined_data = combined_data.drop(columns=['req_src'])
 
-    # === Save the combined_data to a csv file ===
-    # combined_data.to_csv('combined_data.csv', index=False)
-
     # === Split dataset into training and testing sets ===
     X_train, X_test, y_train, y_test = train_test_split(combined_data.drop('label', axis=1), combined_data['label'], test_size=0.4, random_state=42)
 
-
-    # ==================================
-    # ==== Random Forest Classifier ====
-    # ==================================
-    rf_classifier = rfClassifier(X_train, y_train, X_test, y_test)
-
-    # ==================================
-    # ========= SVM Classifier =========
-    # ==================================
-    # svm_classifier = svmClassifier(X_train, y_train, X_test, y_test)
-
+    # Possibities:
+    # 1. Decision Tree
+    # 2. Random Forest
+    # 3. SVM
+    # 4. kNN
+    # 5. Neural Network
+    classifier = kNNClassifier(X_train, y_train, X_test, y_test)
     
-    return rf_classifier
+    return classifier
 
 
 
@@ -146,6 +155,11 @@ if __name__ == "__main__":
     # Read the human DNS request file
     with open(webclients_file, 'r') as human_file: # 'webclients_tcpdump.txt'
         human_dns = human_file.readlines()
+
+    print(f"Starting training with the following parameters:")
+    print(f"Bot file: {bots_file}")
+    print(f"Webclients file: {webclients_file}")
+    print(f"output model: {output_file}")
 
     classifier = train(human_dns, bot_dns)
     
